@@ -1,100 +1,133 @@
-import assert from "node:assert";
+/**
+ * Unit tests for smart-model-switch helpers.
+ * Run: node probe.test.js
+ */
 
-// ── Inline test functions ──
+import {
+	isContextOverflowError,
+	isRateLimitError,
+	splitRef,
+	pickModel,
+	pickLargestContext,
+} from "./index.js";
 
-function isContextOverflowError(errorMessage) {
-  if (!errorMessage) return false;
-  const lower = errorMessage.toLowerCase();
-  return (
-    lower.includes("context_overflow") ||
-    lower.includes("compaction_failure") ||
-    lower.includes("request_too_large") ||
-    lower.includes("context length exceeded") ||
-    lower.includes("maximum context length") ||
-    lower.includes("prompt is too long") ||
-    lower.includes("exceeds model context window") ||
-    lower.includes("model token limit") ||
-    lower.includes("context window exceeded") ||
-    lower.includes("context_window_exceeded") ||
-    lower.includes("model_context_window_exceeded") ||
-    lower.includes("context overflow") ||
-    /context.*(?:too large|exceed|over|limit)/.test(lower) ||
-    /prompt.*(?:too large|too long|exceed)/.test(lower) ||
-    errorMessage.includes("上下文过长") ||
-    errorMessage.includes("上下文超出") ||
-    errorMessage.includes("上下文长度超") ||
-    errorMessage.includes("超出最大上下文") ||
-    errorMessage.includes("请压缩上下文")
-  );
+let passed = 0;
+let failed = 0;
+
+function assert(cond, label) {
+	if (cond) {
+		passed++;
+	} else {
+		failed++;
+		console.error(`  FAIL: ${label}`);
+	}
 }
 
-function pickNormal(available, preferProvider = "minimax") {
-  if (available.length === 0) return null;
-  const preferred = available.find((e) => e.ref.startsWith(`${preferProvider}/`));
-  if (preferred) return preferred.ref;
-  return available[0].ref;
-}
+// ── isContextOverflowError ──────────────────────────────────
 
-function pickLargestContext(available) {
-  if (available.length === 0) return null;
-  const sorted = [...available].sort((a, b) => (b.contextWindow || 0) - (a.contextWindow || 0));
-  return sorted[0].ref;
-}
+console.log("isContextOverflowError:");
+assert(isContextOverflowError("context_overflow"), "context_overflow");
+assert(isContextOverflowError("prompt is too long"), "prompt is too long");
+assert(isContextOverflowError("上下文过长"), "上下文过长");
+assert(!isContextOverflowError("rate limit exceeded"), "not rate limit");
+assert(!isContextOverflowError(""), "empty");
+assert(!isContextOverflowError(null), "null");
 
-function splitRef(ref) {
-  const idx = ref.indexOf("/");
-  if (idx < 0) return { provider: ref, modelId: ref };
-  return { provider: ref.slice(0, idx), modelId: ref.slice(idx + 1) };
-}
+// ── isRateLimitError ────────────────────────────────────────
 
-// ── Tests ──
+console.log("isRateLimitError:");
+assert(isRateLimitError("rate limit exceeded"), "rate limit exceeded");
+assert(isRateLimitError("Rate_Limit_Exceeded"), "Rate_Limit_Exceeded (case)");
+assert(isRateLimitError("too many requests"), "too many requests");
+assert(isRateLimitError("429 Too Many Requests"), "429");
+assert(isRateLimitError("quota exceeded"), "quota exceeded");
+assert(isRateLimitError("请求过于频繁"), "请求过于频繁");
+assert(!isRateLimitError("context overflow"), "not context overflow");
+assert(!isRateLimitError(""), "empty");
+assert(!isRateLimitError(null), "null");
 
-console.log("Testing isContextOverflowError...");
-assert.strictEqual(isContextOverflowError(null), false);
-assert.strictEqual(isContextOverflowError(""), false);
-assert.strictEqual(isContextOverflowError("rate limit"), false);
-assert.strictEqual(isContextOverflowError("auth failed"), false);
-assert.strictEqual(isContextOverflowError("Context overflow: prompt too large for the model"), true);
-assert.strictEqual(isContextOverflowError("context_overflow"), true);
-assert.strictEqual(isContextOverflowError("compaction_failure"), true);
-assert.strictEqual(isContextOverflowError("request_too_large"), true);
-assert.strictEqual(isContextOverflowError("This model's maximum context length is 200000 tokens"), true);
-assert.strictEqual(isContextOverflowError("prompt is too long: 250000 tokens > 200000 maximum"), true);
-assert.strictEqual(isContextOverflowError("Request size exceeds model context window"), true);
-assert.strictEqual(isContextOverflowError("Unhandled stop reason: model_context_window_exceeded"), true);
-assert.strictEqual(isContextOverflowError("上下文过长，请压缩后重试"), true);
-assert.strictEqual(isContextOverflowError("超出最大上下文限制"), true);
-assert.strictEqual(isContextOverflowError("⚠️ API rate limit reached"), false);
-console.log("  All isContextOverflowError tests passed.");
+// ── splitRef ────────────────────────────────────────────────
 
-console.log("Testing pickNormal...");
-const models = [
-  { ref: "volcengine/doubao", contextWindow: 256000 },
-  { ref: "minimax/MiniMax-M2.5", contextWindow: 200000 },
-  { ref: "openrouter/qwen/qwen3-coder:free", contextWindow: 262000 },
+console.log("splitRef:");
+assert(
+	splitRef("minimax/MiniMax-M2.5").provider === "minimax" &&
+		splitRef("minimax/MiniMax-M2.5").modelId === "MiniMax-M2.5",
+	"simple",
+);
+assert(
+	splitRef("openrouter/qwen/qwen3-coder:free").provider === "openrouter" &&
+		splitRef("openrouter/qwen/qwen3-coder:free").modelId ===
+			"qwen/qwen3-coder:free",
+	"nested slash",
+);
+
+// ── pickModel ───────────────────────────────────────────────
+
+console.log("pickModel:");
+const avail = [
+	{ ref: "deepseek/deepseek-chat", contextWindow: 64000 },
+	{ ref: "minimax/MiniMax-M2.5", contextWindow: 200000 },
+	{ ref: "zai/glm-5", contextWindow: 128000 },
 ];
-assert.strictEqual(pickNormal(models, "minimax"), "minimax/MiniMax-M2.5");
-assert.strictEqual(pickNormal(models, "volcengine"), "volcengine/doubao");
-assert.strictEqual(pickNormal(models, "nonexistent"), "volcengine/doubao");
-assert.strictEqual(pickNormal([], "minimax"), null);
-console.log("  All pickNormal tests passed.");
 
-console.log("Testing pickLargestContext...");
-assert.strictEqual(pickLargestContext(models), "openrouter/qwen/qwen3-coder:free");
-assert.strictEqual(pickLargestContext([models[1]]), "minimax/MiniMax-M2.5");
-assert.strictEqual(pickLargestContext([]), null);
-// With mixed context windows, largest wins
-const mixed = [
-  { ref: "a/small", contextWindow: 128000 },
-  { ref: "b/huge", contextWindow: 262000 },
-  { ref: "c/medium", contextWindow: 200000 },
-];
-assert.strictEqual(pickLargestContext(mixed), "b/huge");
-console.log("  All pickLargestContext tests passed.");
+// Basic preference
+assert(
+	pickModel(avail, "minimax", new Set(), new Map()) === "minimax/MiniMax-M2.5",
+	"prefers minimax",
+);
 
-console.log("Testing splitRef...");
-assert.deepStrictEqual(splitRef("minimax/MiniMax-M2.5"), { provider: "minimax", modelId: "MiniMax-M2.5" });
-assert.deepStrictEqual(splitRef("openrouter/qwen/qwen3-coder:free"), { provider: "openrouter", modelId: "qwen/qwen3-coder:free" });
-console.log("  All splitRef tests passed.");
+// Skip excluded
+assert(
+	pickModel(avail, "minimax", new Set(["minimax/MiniMax-M2.5"]), new Map()) ===
+		"deepseek/deepseek-chat",
+	"skips excluded minimax → deepseek",
+);
 
-console.log("\nAll tests passed!");
+// Skip excluded + cooldown
+const cdMap = new Map();
+cdMap.set("deepseek/deepseek-chat", {
+	failCount: 1,
+	cooldownUntil: Date.now() + 600_000,
+});
+assert(
+	pickModel(
+		avail,
+		"minimax",
+		new Set(["minimax/MiniMax-M2.5"]),
+		cdMap,
+	) === "zai/glm-5",
+	"skips excluded + cooldown → zai",
+);
+
+// All excluded → falls back to full list
+assert(
+	pickModel(
+		avail,
+		"minimax",
+		new Set(["deepseek/deepseek-chat", "minimax/MiniMax-M2.5", "zai/glm-5"]),
+		new Map(),
+	) !== null,
+	"all excluded → still returns something",
+);
+
+// Empty available
+assert(pickModel([], "minimax", new Set(), new Map()) === null, "empty → null");
+
+// ── pickLargestContext ──────────────────────────────────────
+
+console.log("pickLargestContext:");
+assert(
+	pickLargestContext(avail, new Set()) === "minimax/MiniMax-M2.5",
+	"picks largest (200k)",
+);
+assert(
+	pickLargestContext(avail, new Set(["minimax/MiniMax-M2.5"])) ===
+		"zai/glm-5",
+	"excludes minimax → picks zai (128k)",
+);
+assert(pickLargestContext([], new Set()) === null, "empty → null");
+
+// ── Summary ─────────────────────────────────────────────────
+
+console.log(`\n${passed} passed, ${failed} failed`);
+if (failed > 0) process.exit(1);
