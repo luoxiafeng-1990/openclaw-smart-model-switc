@@ -1,0 +1,43 @@
+{
+  "id": "smart-model-switch",
+  "name": "Smart Model Switch",
+  "description": "Probe models, maintain available list, sync provider baseUrl+apiKey to OpenClaw config. Prefer MiniMax; on session error remove model; hourly re-probe.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "providers": {
+        "type": "object",
+        "description": "Per-provider baseUrl, apiKey, and models. Synced to openclaw.json models.providers.",
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "baseUrl": { "type": "string", "description": "API base URL" },
+            "apiKey": { "type": "string", "description": "API key" },
+            "models": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string" },
+                  "name": { "type": "string" }
+                },
+                "required": ["id"]
+              }
+            }
+          },
+          "required": ["baseUrl", "apiKey", "models"]
+        }
+      },
+      "preferProvider": {
+        "type": "string",
+        "description": "Provider to prefer when picking from available list (default: minimax)"
+      },
+      "probeIntervalHours": {
+        "type": "number",
+        "description": "Hours between full probe of all models (default: 1)",
+        "default": 1
+      }
+    }
+  }
+}

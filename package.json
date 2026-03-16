@@ -1,0 +1,28 @@
+{
+  "name": "smart-model-switch",
+  "version": "1.0.0",
+  "description": "OpenClaw plugin: smart model switching with proactive probing, auto-failover, and context-aware selection",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "node probe.test.js"
+  },
+  "openclaw": {
+    "extensions": ["./index.js"]
+  },
+  "keywords": [
+    "openclaw",
+    "plugin",
+    "model-switch",
+    "failover",
+    "context-aware"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/luoxiafeng-1990/openclaw-smart-model-switc.git"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}
